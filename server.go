@@ -1,88 +1,50 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
+	"go-server/handler"
 	"log"
-	"math/rand"
 	"net/http"
-	"time"
 )
 
 const (
 	DefaultQeueSize = 100
-	DefaultGoNum    = 10
+	DefaultGoNum    = 1000
 )
 
-type WebHandler struct {
-	q          chan *WebCmd
-	handler    HandlerFunc
-	handlerNum int
-}
-type HandlerFunc func(*WebCmd)
-
-// You can custom design your WebCmd for general server request
-type WebCmd struct {
-	AppName    string   `json:"app"`      // request name
-	InputArgs  []string `json:"input"`    // input arguments
-	OutputArgs *OutConf `json:"output"`   // output arguments
-	Ticket     string   `json:"ticket"`   // count for the request
-	Operator   string   `json:"operator"` // service operator like  admin
-}
-type OutConf struct {
-	Offset    int64 `json:"offset"`    //
-	Limit     int64 `json:"limit"`     //
-	Retention int64 `json:"retention"` //
-}
-
 func main() {
-	cmdHandler := NewWebHandler(DefaultGoNum, CmdHandleFunc)
+	cmdHandler := handler.NewWebHandler(DefaultGoNum, CmdHandleFunc)
 	cmdHandler.Serve()
 
 	http.HandleFunc("/test", cmdHandler.HandleRequest)
+	http.HandleFunc("/hello", cmdHandler.PrintHello)
+
+	log.Println("Server listening on port 8888")
 	log.Fatal(http.ListenAndServe(":8888", nil))
 }
 
-func NewWebHandler(num int, handler HandlerFunc) *WebHandler {
-	webHandler := &WebHandler{}
-	webHandler.Init(num, handler)
-	return webHandler
-}
-func (h *WebHandler) Init(num int, handler HandlerFunc) {
-	h.handlerNum = num
-	h.q = make(chan *WebCmd, DefaultQeueSize)
-	h.handler = handler
-}
-
-func (h *WebHandler) Serve() {
-	// default 10 workers to handle 100 request
-	for i := 0; i < h.handlerNum; i++ {
-		go h.worker()
-	}
-}
-func (h *WebHandler) worker() {
-	for req := range h.q {
-		h.handler(req)
-	}
-}
-
 // CmdHandleFunc handle function to define how to handle request(cmd)
-func CmdHandleFunc(cmd *WebCmd) {
-	log.Println(rand.Int63n(time.Now().UnixNano()))
-	log.Println("cmd handled", cmd)
+func CmdHandleFunc(cmd *handler.WebCmd) {
+	// if cmd.InputArgs[0] == "0" {
+	// 	log.Println("Hello ", cmd.AppName, " from handler func")
+	// } else if cmd.InputArgs[0] == "1" {
+	// 	log.Println("Already said Hi ", cmd.AppName, " from handler func")
+	// }
+
+	for {
+		select {
+		case r := <-cmd.Fanout.Read:
+			go ReadFunc(r)
+		case w := <-cmd.Fanout.Write:
+			go WriteFunc(w)
+		}
+	}
 }
 
-func (h *WebHandler) HandleRequest(w http.ResponseWriter, r *http.Request) {
+func ReadFunc(r string) {
 
-	var cmd WebCmd
-	jsonDec := json.NewDecoder(r.Body)
-	if err := jsonDec.Decode(&cmd); err != nil {
-		http.Error(w, "Invalid request content", http.StatusBadRequest)
-		return
-	}
-	name := cmd.AppName
-	log.Println("Name : ", name)
-	fmt.Fprint(w, cmd.AppName)
-	w.Write([]byte(cmd.AppName))
-	h.q <- &cmd
+	log.Println("reading ...", r)
+}
+
+func WriteFunc(w string) {
+	log.Println("writing ...", w)
 }
